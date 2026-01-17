@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.oakchain</groupId>
+        <artifactId>oak-chain-connector</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>oak-chain-connector.core</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Oak Chain Connector - Core Bundle</name>
+    <description>OSGi bundle providing HTTP persistence layer for oak-chain integration</description>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+            
+            <!-- Generate OSGi bundle using bnd -->
+            <plugin>
+                <groupId>biz.aQute.bnd</groupId>
+                <artifactId>bnd-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>bnd-process</id>
+                        <goals>
+                            <goal>bnd-process</goal>
+                        </goals>
+                        <configuration>
+                            <bnd><![CDATA[
+Bundle-Category: oak-chain
+Bundle-SymbolicName: com.oakchain.connector.core
+Bundle-Description: ${project.description}
+
+# Export our packages
+Export-Package: \
+    com.oakchain.connector.persistence,\
+    com.oakchain.connector.wallet
+
+# Import Oak SPI packages (provided by AEM)
+Import-Package: \
+    org.apache.jackrabbit.oak.segment.spi,\
+    org.apache.jackrabbit.oak.segment.spi.monitor,\
+    org.apache.jackrabbit.oak.segment.spi.persistence,\
+    org.apache.jackrabbit.oak.segment.remote,\
+    org.apache.jackrabbit.oak.commons,\
+    javax.servlet;version="[3.1,5)";resolution:=optional,\
+    javax.servlet.http;version="[3.1,5)";resolution:=optional,\
+    org.osgi.service.component.annotations;resolution:=optional,\
+    org.osgi.service.metatype.annotations;resolution:=optional,\
+    org.slf4j,\
+    *
+
+# Embed HTTP client and JSON libraries (not available in all AEM versions)
+-includeresource: \
+    @httpclient-*.jar!/!META-INF/MANIFEST.MF|!META-INF/versions/*,\
+    @httpcore-*.jar!/!META-INF/MANIFEST.MF|!META-INF/versions/*,\
+    @gson-*.jar!/!META-INF/MANIFEST.MF|!META-INF/versions/*
+
+# Private packages (embedded, not exported)
+Private-Package: \
+    org.apache.http.*,\
+    com.google.gson.*
+
+# Ignore multi-release JAR module-info classes
+-fixupmessages: "Classes found in the wrong directory"; restrict:=error; is:=ignore
+                            ]]></bnd>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+                    </archive>
+                </configuration>
+            </plugin>
+            
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+    <dependencies>
+        <!-- Oak dependencies (provided by AEM runtime) -->
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-segment-tar</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-segment-remote</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-store-spi</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-store-composite</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-commons</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-api</artifactId>
+        </dependency>
+
+        <!-- OSGi -->
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>osgi.core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>osgi.annotation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.component.annotations</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.metatype.annotations</artifactId>
+        </dependency>
+
+        <!-- Logging (provided by AEM) -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+
+        <!-- HTTP Client (embedded in bundle) -->
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+        </dependency>
+
+        <!-- JSON (embedded in bundle) -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+        </dependency>
+
+        <!-- Servlet API (provided by AEM) -->
+        <dependency>
+            <groupId>javax.servlet</groupId>
+            <artifactId>javax.servlet-api</artifactId>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+        </dependency>
+    </dependencies>
+</project>

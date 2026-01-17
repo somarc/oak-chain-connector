@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.oakchain</groupId>
+        <artifactId>oak-chain-connector</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>oak-chain-connector.ui.apps</artifactId>
+    <packaging>content-package</packaging>
+
+    <name>Oak Chain Connector - UI Apps</name>
+    <description>Content package containing the code components (under /apps)</description>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.jackrabbit</groupId>
+                <artifactId>filevault-package-maven-plugin</artifactId>
+                <extensions>true</extensions>
+                <configuration>
+                    <group>com.oakchain</group>
+                    <packageType>mixed</packageType>
+                    <accessControlHandling>merge</accessControlHandling>
+                    <properties>
+                        <cloudManagerTarget>none</cloudManagerTarget>
+                    </properties>
+                    <embeddeds>
+                        <embedded>
+                            <groupId>com.oakchain</groupId>
+                            <artifactId>oak-chain-connector.core</artifactId>
+                            <target>/apps/oak-chain-connector/install</target>
+                        </embedded>
+                    </embeddeds>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.oakchain</groupId>
+            <artifactId>oak-chain-connector.core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+</project>

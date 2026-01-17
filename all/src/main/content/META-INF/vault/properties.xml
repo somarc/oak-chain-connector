@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties>
+    <entry key="name">oak-chain-connector.all</entry>
+    <entry key="description">Oak Chain Connector - Complete Package</entry>
+    <entry key="group">com.oakchain</entry>
+    <entry key="version">${project.version}</entry>
+    <entry key="packageType">container</entry>
+</properties>

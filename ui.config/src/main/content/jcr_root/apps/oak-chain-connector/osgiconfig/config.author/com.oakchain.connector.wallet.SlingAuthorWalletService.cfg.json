@@ -1,0 +1,4 @@
+{
+  "enabled": true,
+  "keystorePath": "$[env:OAK_CHAIN_KEYSTORE_PATH;default=]"
+}

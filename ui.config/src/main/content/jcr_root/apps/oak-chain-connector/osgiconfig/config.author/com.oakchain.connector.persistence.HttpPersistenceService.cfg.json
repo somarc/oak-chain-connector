@@ -1,0 +1,6 @@
+{
+  "globalStoreUrl": "$[env:OAK_CHAIN_VALIDATOR_URL;default=http://localhost:8090]",
+  "lazyMount": true,
+  "healthCheckIntervalSeconds": 10,
+  "connectionTimeoutMs": 3000
+}

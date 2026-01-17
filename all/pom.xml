@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.oakchain</groupId>
+        <artifactId>oak-chain-connector</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>oak-chain-connector.all</artifactId>
+    <packaging>content-package</packaging>
+
+    <name>Oak Chain Connector - All</name>
+    <description>Complete deployable package containing all modules</description>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.jackrabbit</groupId>
+                <artifactId>filevault-package-maven-plugin</artifactId>
+                <extensions>true</extensions>
+                <configuration>
+                    <group>com.oakchain</group>
+                    <packageType>container</packageType>
+                    <properties>
+                        <cloudManagerTarget>all</cloudManagerTarget>
+                    </properties>
+                    <embeddeds>
+                        <embedded>
+                            <groupId>com.oakchain</groupId>
+                            <artifactId>oak-chain-connector.ui.apps</artifactId>
+                            <type>zip</type>
+                            <target>/apps/oak-chain-connector-packages/application/install</target>
+                        </embedded>
+                        <embedded>
+                            <groupId>com.oakchain</groupId>
+                            <artifactId>oak-chain-connector.ui.config</artifactId>
+                            <type>zip</type>
+                            <target>/apps/oak-chain-connector-packages/application/install</target>
+                        </embedded>
+                    </embeddeds>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.oakchain</groupId>
+            <artifactId>oak-chain-connector.ui.apps</artifactId>
+            <version>${project.version}</version>
+            <type>zip</type>
+        </dependency>
+        <dependency>
+            <groupId>com.oakchain</groupId>
+            <artifactId>oak-chain-connector.ui.config</artifactId>
+            <version>${project.version}</version>
+            <type>zip</type>
+        </dependency>
+    </dependencies>
+</project>
