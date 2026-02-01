@@ -2,9 +2,25 @@
 
 AEM integration add-on for mounting the oak-chain distributed content network.
 
+**Package**: `com.oakchain.connector.*`  
+**Source**: Migrated from `oak-segment-http` with AEM-compatible package names
+
 ## Overview
 
 This project enables existing Adobe Experience Manager (AEM) instances to mount and access the oak-chain distributed content repository via Oak's public SPI layer. It follows the Adobe AEM Project Archetype structure for seamless integration with AEM 6.5.x and AEM as a Cloud Service.
+
+## Relationship to `oak-segment-http`
+
+**This connector is a migration** of code from `oak-segment-http` (in the fork) with renamed packages:
+
+- **Source**: `org.apache.jackrabbit.oak.segment.http.*` → **Target**: `com.oakchain.connector.*`
+- **15 Java files migrated** (persistence layer + wallet services)
+- **Why migrated**: AEM security restrictions prevent using Apache package names
+- **Why both exist**: 
+  - **Connector** (this): For AEM customers (AEM-compatible packages)
+  - **`oak-segment-http`** (fork): For validators (cross-cluster reads, shard routing)
+
+See [IMPLEMENTATION-COMPLETE.md](IMPLEMENTATION-COMPLETE.md) for migration details.
 
 ## Architecture
 
@@ -62,29 +78,37 @@ mvn clean install -PautoInstallBundle -pl core
 
 ## Configuration
 
+The connector uses OSGi configuration with environment variable substitution. For complete configuration details, see **[OSGI-CONFIGURATION.md](OSGI-CONFIGURATION.md)**.
+
+### Quick Configuration
+
+**Set environment variables:**
+```bash
+export OAK_CHAIN_VALIDATOR_URL="http://localhost:8090"
+export OAK_CHAIN_KEYSTORE_PATH="/path/to/wallet.properties"
+```
+
+**Or configure via Web Console:** `/system/console/configMgr`
+
 ### HTTP Persistence Service
 
-Configure at: `/system/console/configMgr/com.oakchain.connector.persistence.HttpPersistenceService`
+**PID**: `com.oakchain.connector.persistence.HttpPersistenceService`
 
-**Properties:**
-- `globalStoreUrl`: URL of oak-chain validator (e.g., `http://oak-global-store:8090`)
-- `lazyMount`: Enable lazy mounting (waits for validator availability)
-- `healthCheckIntervalSeconds`: Health check interval when lazy mount enabled
-- `connectionTimeoutMs`: Connection timeout for health checks
-
-**Environment Variables:**
-- `OAK_CHAIN_VALIDATOR_URL`: Validator URL (overrides default)
+**Key Properties:**
+- `globalStoreUrl` - Validator URL (env: `OAK_CHAIN_VALIDATOR_URL`)
+- `lazyMount` - Wait for validator availability (default: true)
+- `healthCheckIntervalSeconds` - Health check interval (default: 10)
+- `connectionTimeoutMs` - Connection timeout (default: 3000)
 
 ### Sling Author Wallet Service
 
-Configure at: `/system/console/configMgr/com.oakchain.connector.wallet.SlingAuthorWalletService`
+**PID**: `com.oakchain.connector.wallet.SlingAuthorWalletService`
 
-**Properties:**
-- `enabled`: Enable wallet functionality
-- `keystorePath`: Path to wallet keystore file
+**Key Properties:**
+- `enabled` - Enable wallet functionality (default: true)
+- `keystorePath` - Wallet keystore path (env: `OAK_CHAIN_KEYSTORE_PATH`)
 
-**Environment Variables:**
-- `OAK_CHAIN_KEYSTORE_PATH`: Keystore path (overrides default)
+**See [OSGI-CONFIGURATION.md](OSGI-CONFIGURATION.md) for detailed configuration guide.**
 
 ## AEM Compatibility
 
@@ -157,6 +181,14 @@ Contributions welcome! Please:
 1. Fork the repository
 2. Create a feature branch
 3. Submit a pull request with tests
+
+## Related Modules
+
+| Module | Relationship |
+|--------|--------------|
+| `oak-segment-http` (fork) | **Source code** - Validators use this for cross-cluster operations |
+| `oak-segment-consensus` | Validator server that this connector connects to |
+| `oak-chain-sdk` | JavaScript/TypeScript SDK for non-AEM applications |
 
 ## Support
 
