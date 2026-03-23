@@ -32,22 +32,23 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 /**
- * Service for Sling authors to propose signed delete transactions.
+ * Service for Sling authors to submit chain-backed signed delete proposals.
  * 
  * <p>This service allows Sling author instances to:
  * - Propose deletion of existing content
- * - Verify content ownership (wallet address must match content creator)
+ * - Verify content ownership against the current wallet shard root
  * - Sign delete proposals with their Ethereum wallet
- * - Submit signed transactions to validators for consensus</p>
+ * - Submit proposals with client-supplied {@code proposalId} and Ethereum payment hash</p>
  * 
- * <p><strong>Signed Transaction Flow:</strong></p>
+ * <p><strong>Chain-backed Flow:</strong></p>
  * <ol>
  *   <li>Sling author proposes delete (contentPath)</li>
- *   <li>Service verifies ownership (path must be under /oak-chain/content/{wallet}/)</li>
- *   <li>Service signs transaction with wallet private key</li>
- *   <li>Signed transaction submitted to validator</li>
+ *   <li>Service verifies ownership (path must be under the wallet shard root)</li>
+ *   <li>Service signs the exact delete payload with the wallet private key</li>
+ *   <li>Signed proposal submitted to validator with {@code proposalId} and {@code ethereumTxHash}</li>
  *   <li>Validator verifies signature and ownership</li>
  *   <li>If valid, validator processes delete via consensus</li>
  * </ol>
@@ -130,16 +131,29 @@ public class SlingDeleteProposalService {
     }
     
     /**
-     * Propose a signed delete transaction.
-     * 
-     * <p>The transaction is signed with the Sling author's wallet private key.
-     * Ownership is verified before signing (path must be under /oak-chain/content/{wallet}/).
-     * The validator will verify the signature and ownership before processing.</p>
-     * 
-     * @param contentPath Path to content to delete (e.g., "/oak-chain/content/0x742d35.../page-123")
-     * @return Delete proposal result (success/failure)
+     * Legacy helper retained for compatibility.
      */
     public DeleteResult proposeDelete(String contentPath) {
+        return new DeleteResult(false,
+            "Chain-backed Oak deletes require proposalId and ethereumTxHash. " +
+            "Use proposeChainBackedDelete(proposalId, contentPath, ethereumTxHash, paymentTier).");
+    }
+
+    public DeleteResult proposeChainBackedDelete(
+            String proposalId,
+            String contentPath,
+            String ethereumTxHash) {
+        return proposeChainBackedDelete(proposalId, contentPath, ethereumTxHash, "standard");
+    }
+
+    /**
+     * Propose a chain-backed signed delete.
+     */
+    public DeleteResult proposeChainBackedDelete(
+            String proposalId,
+            String contentPath,
+            String ethereumTxHash,
+            String paymentTier) {
         if (!enabled) {
             return new DeleteResult(false, "Delete proposal service is disabled");
         }
@@ -152,33 +166,48 @@ public class SlingDeleteProposalService {
         if (walletAddress == null || walletAddress.isEmpty()) {
             return new DeleteResult(false, "Wallet address not available");
         }
+
+        if (!isValidProposalId(proposalId)) {
+            return new DeleteResult(false,
+                "Invalid proposalId. Expected 0x-prefixed 32-byte hex value.");
+        }
+
+        if (!isValidTransactionHash(ethereumTxHash)) {
+            return new DeleteResult(false,
+                "Invalid ethereumTxHash. Expected 0x-prefixed 32-byte transaction hash.");
+        }
+
+        String normalizedTier = normalizePaymentTier(paymentTier);
+        if (normalizedTier == null) {
+            return new DeleteResult(false,
+                "Invalid paymentTier. Must be standard, express, or priority.");
+        }
         
-        // Verify path ownership: must be under /oak-chain/content/{wallet}/
-        String expectedPrefix = "/oak-chain/content/" + walletAddress.toLowerCase() + "/";
-        if (!contentPath.toLowerCase().startsWith(expectedPrefix)) {
+        String normalizedContentPath = contentPath != null ? contentPath : "";
+
+        // Verify path ownership: must be under the current wallet shard root.
+        String expectedPrefix = getShardRoot(walletAddress).toLowerCase(Locale.ROOT) + "/";
+        if (!normalizedContentPath.toLowerCase(Locale.ROOT).startsWith(expectedPrefix)) {
             return new DeleteResult(false, 
                 String.format("Path ownership violation: Content at %s does not belong to wallet %s. " +
-                             "Only content under /oak-chain/content/%s/ can be deleted.",
-                             contentPath, walletAddress, walletAddress));
+                             "Only content under %s can be deleted.",
+                             normalizedContentPath, walletAddress, expectedPrefix));
         }
         
         try {
-            // Create transaction message to sign
-            // Format: walletAddress:timestamp:delete:contentPath
-            long timestamp = System.currentTimeMillis();
-            String transactionMessage = String.format("%s:%d:delete:%s", 
-                walletAddress, timestamp, contentPath);
-            
-            // Sign transaction with wallet private key
-            String signature = walletService.sign(transactionMessage);
+            // Sign the exact content path the validator will process.
+            String signature = walletService.sign(normalizedContentPath);
             
             if (signature == null) {
-                return new DeleteResult(false, "Failed to sign delete transaction");
+                return new DeleteResult(false, "Failed to sign delete proposal");
             }
             
-            log.info("Submitting signed delete transaction");
+            log.info("Submitting chain-backed signed delete proposal");
+            log.debug("  Proposal ID: {}", proposalId);
+            log.debug("  Ethereum Tx: {}", ethereumTxHash);
             log.debug("  Wallet: {}", walletAddress);
-            log.debug("  Content Path: {}", contentPath);
+            log.debug("  Content Path: {}", normalizedContentPath);
+            log.debug("  Payment Tier: {}", normalizedTier);
             log.debug("  Signature: {}...{}", 
                 signature.substring(0, Math.min(10, signature.length())),
                 signature.length() > 10 ? signature.substring(signature.length() - 4) : "");
@@ -196,12 +225,14 @@ public class SlingDeleteProposalService {
             
             // Build form parameters
             String params = String.format(
-                "wallet=%s&signature=%s&contentPath=%s&clientId=%s&timestamp=%d",
+                "walletAddress=%s&proposalId=%s&signature=%s&contentPath=%s&clientId=%s&ethereumTxHash=%s&paymentTier=%s",
                 java.net.URLEncoder.encode(walletAddress, StandardCharsets.UTF_8),
+                java.net.URLEncoder.encode(proposalId, StandardCharsets.UTF_8),
                 java.net.URLEncoder.encode(signature, StandardCharsets.UTF_8),
-                java.net.URLEncoder.encode(contentPath, StandardCharsets.UTF_8),
+                java.net.URLEncoder.encode(normalizedContentPath, StandardCharsets.UTF_8),
                 java.net.URLEncoder.encode(clientId, StandardCharsets.UTF_8),
-                timestamp
+                java.net.URLEncoder.encode(ethereumTxHash, StandardCharsets.UTF_8),
+                java.net.URLEncoder.encode(normalizedTier, StandardCharsets.UTF_8)
             );
             
             // Send request
@@ -228,18 +259,61 @@ public class SlingDeleteProposalService {
                 responseBody = response.toString();
             }
             
-            if (responseCode == 200) {
-                log.info("Delete transaction accepted by validator: {}", contentPath);
-                return new DeleteResult(true, "Delete transaction accepted", responseBody);
+            if (responseCode >= 200 && responseCode < 300) {
+                log.info("Delete proposal accepted by validator: {}", normalizedContentPath);
+                return new DeleteResult(true, "Delete proposal accepted", responseBody);
             } else {
-                log.warn("Delete transaction rejected: HTTP {} - {}", responseCode, responseBody);
-                return new DeleteResult(false, "Delete transaction rejected: " + responseBody);
+                log.warn("Delete proposal rejected: HTTP {} - {}", responseCode, responseBody);
+                return new DeleteResult(false, "Delete proposal rejected: " + responseBody);
             }
             
         } catch (Exception e) {
-            log.error("Failed to propose signed delete transaction", e);
+            log.error("Failed to propose chain-backed delete", e);
             return new DeleteResult(false, "Failed to propose delete: " + e.getMessage());
         }
+    }
+
+    private static boolean isValidProposalId(String proposalId) {
+        return proposalId != null && proposalId.matches("(?i)^0x[a-f0-9]{64}$");
+    }
+
+    private static boolean isValidTransactionHash(String ethereumTxHash) {
+        return ethereumTxHash != null && ethereumTxHash.matches("(?i)^0x[a-f0-9]{64}$");
+    }
+
+    private static String normalizePaymentTier(String paymentTier) {
+        if (paymentTier == null || paymentTier.trim().isEmpty()) {
+            return "standard";
+        }
+        String normalized = paymentTier.trim().toLowerCase(Locale.ROOT);
+        switch (normalized) {
+            case "standard":
+            case "express":
+            case "priority":
+                return normalized;
+            default:
+                return null;
+        }
+    }
+
+    private static String getShardRoot(String walletAddress) {
+        String normalized = normalizeWalletAddress(walletAddress);
+        return String.format("/oak-chain/%s/%s/%s/0x%s",
+            normalized.substring(0, 2),
+            normalized.substring(2, 4),
+            normalized.substring(4, 6),
+            normalized);
+    }
+
+    private static String normalizeWalletAddress(String walletAddress) {
+        if (walletAddress == null) {
+            throw new IllegalArgumentException("walletAddress required");
+        }
+        String value = walletAddress.trim();
+        if (!value.matches("(?i)^0x[a-f0-9]{40}$")) {
+            throw new IllegalArgumentException("Invalid wallet address format");
+        }
+        return value.substring(2).toLowerCase(Locale.ROOT);
     }
     
     /**
@@ -261,4 +335,3 @@ public class SlingDeleteProposalService {
         }
     }
 }
-

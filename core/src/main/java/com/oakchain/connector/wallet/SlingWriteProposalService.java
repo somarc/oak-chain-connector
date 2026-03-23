@@ -32,21 +32,23 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 /**
- * Service for Sling authors to propose signed write transactions to validators.
+ * Service for Sling authors to submit chain-backed signed write proposals to validators.
  * 
  * <p>This service allows Sling author instances to:
- * - Create content write proposals
- * - Sign proposals with their Ethereum wallet
- * - Submit signed transactions to validators for consensus</p>
+ * - Create chain-backed write proposals
+ * - Sign proposal payloads with their Ethereum wallet
+ * - Submit proposals with client-supplied {@code proposalId} and Ethereum payment hash</p>
  * 
- * <p><strong>Signed Transaction Flow:</strong></p>
+ * <p><strong>Chain-backed Flow:</strong></p>
  * <ol>
- *   <li>Sling author creates write proposal (contentType, message)</li>
- *   <li>Service signs transaction with wallet private key</li>
- *   <li>Signed transaction submitted to validator</li>
- *   <li>Validator verifies signature using wallet public key</li>
+ *   <li>Sling author obtains a contract-backed {@code proposalId}</li>
+ *   <li>Sling author pays on-chain and gets {@code ethereumTxHash}</li>
+ *   <li>Service signs the proposal message with the wallet private key</li>
+ *   <li>Signed proposal submitted to validator</li>
+ *   <li>Validator verifies signature and payment proof using the supplied identifiers</li>
  *   <li>If valid, validator processes write via consensus</li>
  * </ol>
  */
@@ -123,16 +125,39 @@ public class SlingWriteProposalService {
     }
     
     /**
-     * Propose a signed write transaction.
-     * 
-     * <p>The transaction is signed with the Sling author's wallet private key.
-     * The validator will verify the signature before processing.</p>
-     * 
-     * @param contentType Content type (e.g., "page", "asset")
-     * @param message Content message/description
-     * @return Write proposal result (success/failure)
+     * Legacy helper retained for compatibility.
+     *
+     * <p>Chain-backed Oak writes now require a client-supplied {@code proposalId}
+     * and an on-chain {@code ethereumTxHash}. Call
+     * {@link #proposeChainBackedWrite(String, String, String, String, String)}
+     * instead.</p>
      */
     public WriteResult proposeWrite(String contentType, String message) {
+        return new WriteResult(false,
+            "Chain-backed Oak writes require proposalId and ethereumTxHash. " +
+            "Use proposeChainBackedWrite(proposalId, contentType, message, ethereumTxHash, paymentTier).");
+    }
+
+    public WriteResult proposeChainBackedWrite(
+            String proposalId,
+            String contentType,
+            String message,
+            String ethereumTxHash) {
+        return proposeChainBackedWrite(proposalId, contentType, message, ethereumTxHash, "standard");
+    }
+
+    /**
+     * Propose a chain-backed signed write.
+     *
+     * <p>The proposal message is signed exactly as submitted to the validator.
+     * This keeps the connector aligned to the current Oak validator contract.</p>
+     */
+    public WriteResult proposeChainBackedWrite(
+            String proposalId,
+            String contentType,
+            String message,
+            String ethereumTxHash,
+            String paymentTier) {
         if (!enabled) {
             return new WriteResult(false, "Write proposal service is disabled");
         }
@@ -145,30 +170,44 @@ public class SlingWriteProposalService {
         if (walletAddress == null || walletAddress.isEmpty()) {
             return new WriteResult(false, "Wallet address not available");
         }
+
+        if (!isValidProposalId(proposalId)) {
+            return new WriteResult(false,
+                "Invalid proposalId. Expected 0x-prefixed 32-byte hex value.");
+        }
+
+        if (!isValidTransactionHash(ethereumTxHash)) {
+            return new WriteResult(false,
+                "Invalid ethereumTxHash. Expected 0x-prefixed 32-byte transaction hash.");
+        }
+
+        String normalizedTier = normalizePaymentTier(paymentTier);
+        if (normalizedTier == null) {
+            return new WriteResult(false,
+                "Invalid paymentTier. Must be standard, express, or priority.");
+        }
         
         try {
-            // Create transaction message to sign
-            // Format: walletAddress:timestamp:contentType:message
-            long timestamp = System.currentTimeMillis();
-            String transactionMessage = String.format("%s:%d:%s:%s", 
-                walletAddress, timestamp, contentType, message);
-            
-            // Sign transaction with wallet private key
-            String signature = walletService.sign(transactionMessage);
+            String normalizedMessage = message != null ? message : "";
+
+            // Sign the exact proposal message the validator will verify.
+            String signature = walletService.sign(normalizedMessage);
             
             if (signature == null) {
-                return new WriteResult(false, "Failed to sign write transaction");
+                return new WriteResult(false, "Failed to sign write proposal");
             }
             
-            log.info("Submitting signed write transaction");
+            log.info("Submitting chain-backed signed write proposal");
+            log.debug("  Proposal ID: {}", proposalId);
+            log.debug("  Ethereum Tx: {}", ethereumTxHash);
             log.debug("  Wallet: {}", walletAddress);
             log.debug("  Content Type: {}", contentType);
-            log.debug("  Message: {}", message);
+            log.debug("  Payment Tier: {}", normalizedTier);
             log.debug("  Signature: {}...{}", 
                 signature.substring(0, Math.min(10, signature.length())),
                 signature.length() > 10 ? signature.substring(signature.length() - 4) : "");
             
-            // Submit signed transaction to validator
+            // Submit signed proposal to validator
             String writeUrl = validatorUrl + "/v1/propose-write";
             URL url = new URL(writeUrl);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -181,13 +220,15 @@ public class SlingWriteProposalService {
             
             // Build form parameters
             String params = String.format(
-                "wallet=%s&signature=%s&message=%s&contentType=%s&clientId=%s&timestamp=%d",
+                "walletAddress=%s&proposalId=%s&signature=%s&message=%s&contentType=%s&clientId=%s&ethereumTxHash=%s&paymentTier=%s",
                 java.net.URLEncoder.encode(walletAddress, StandardCharsets.UTF_8),
+                java.net.URLEncoder.encode(proposalId, StandardCharsets.UTF_8),
                 java.net.URLEncoder.encode(signature, StandardCharsets.UTF_8),
-                java.net.URLEncoder.encode(message, StandardCharsets.UTF_8),
+                java.net.URLEncoder.encode(normalizedMessage, StandardCharsets.UTF_8),
                 java.net.URLEncoder.encode(contentType, StandardCharsets.UTF_8),
                 java.net.URLEncoder.encode(clientId, StandardCharsets.UTF_8),
-                timestamp
+                java.net.URLEncoder.encode(ethereumTxHash, StandardCharsets.UTF_8),
+                java.net.URLEncoder.encode(normalizedTier, StandardCharsets.UTF_8)
             );
             
             // Send request
@@ -214,17 +255,40 @@ public class SlingWriteProposalService {
                 responseBody = response.toString();
             }
             
-            if (responseCode == 200) {
-                log.info("Write transaction accepted by validator");
-                return new WriteResult(true, "Write transaction accepted", responseBody);
+            if (responseCode >= 200 && responseCode < 300) {
+                log.info("Write proposal accepted by validator");
+                return new WriteResult(true, "Write proposal accepted", responseBody);
             } else {
-                log.warn("Write transaction rejected: HTTP {} - {}", responseCode, responseBody);
-                return new WriteResult(false, "Write transaction rejected: " + responseBody);
+                log.warn("Write proposal rejected: HTTP {} - {}", responseCode, responseBody);
+                return new WriteResult(false, "Write proposal rejected: " + responseBody);
             }
             
         } catch (Exception e) {
-            log.error("Failed to propose signed write transaction", e);
+            log.error("Failed to propose chain-backed write", e);
             return new WriteResult(false, "Failed to propose write: " + e.getMessage());
+        }
+    }
+
+    private static boolean isValidProposalId(String proposalId) {
+        return proposalId != null && proposalId.matches("(?i)^0x[a-f0-9]{64}$");
+    }
+
+    private static boolean isValidTransactionHash(String ethereumTxHash) {
+        return ethereumTxHash != null && ethereumTxHash.matches("(?i)^0x[a-f0-9]{64}$");
+    }
+
+    private static String normalizePaymentTier(String paymentTier) {
+        if (paymentTier == null || paymentTier.trim().isEmpty()) {
+            return "standard";
+        }
+        String normalized = paymentTier.trim().toLowerCase(Locale.ROOT);
+        switch (normalized) {
+            case "standard":
+            case "express":
+            case "priority":
+                return normalized;
+            default:
+                return null;
         }
     }
     
@@ -247,4 +311,3 @@ public class SlingWriteProposalService {
         }
     }
 }
-
