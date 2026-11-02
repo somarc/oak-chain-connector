@@ -16,6 +16,7 @@
  */
 package com.oakchain.connector.wallet;
 
+import com.oakchain.connector.persistence.ValidatorAuthHelper;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.ConfigurationPolicy;
@@ -44,7 +45,7 @@ import java.nio.charset.StandardCharsets;
  * <p><strong>Registration Flow:</strong></p>
  * <ol>
  *   <li>Sling author loads/generates wallet (via SlingAuthorWalletService)</li>
- *   <li>This service registers with validator at /v1/register-client</li>
+ *   <li>This service registers with validator at /v1/client/register</li>
  *   <li>Registration includes: clientId, clientUrl, walletAddress</li>
  *   <li>Validator stores registration for signature verification</li>
  * </ol>
@@ -260,15 +261,6 @@ public class SlingAuthorRegistrationService {
             log.debug("  Client URL: {}", clientUrl);
             log.debug("  Wallet Address: {}", walletAddress);
             
-            String registrationUrl = validatorUrl + "/v1/register-client";
-            URL url = new URL(registrationUrl);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setDoOutput(true);
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(10000);
-            
             // Build JSON payload with wallet address
             String jsonPayload = String.format(
                 "{\"clientId\":\"%s\",\"clientUrl\":\"%s\",\"walletAddress\":\"%s\"}",
@@ -276,39 +268,31 @@ public class SlingAuthorRegistrationService {
                 clientUrl.replace("\"", "\\\""),
                 walletAddress.replace("\"", "\\\"")
             );
-            
-            // Send request
-            try (OutputStream os = conn.getOutputStream()) {
-                byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
-                os.write(input, 0, input.length);
+
+            RegistrationResponse response = registerWithValidator(
+                validatorUrl + "/v1/client/register",
+                jsonPayload
+            );
+
+            if (response.responseCode == HttpURLConnection.HTTP_NOT_FOUND
+                    || response.responseCode == HttpURLConnection.HTTP_BAD_METHOD) {
+                log.debug("Primary registration endpoint unavailable at {} (HTTP {}) - falling back to legacy route",
+                    response.endpoint, response.responseCode);
+                response = registerWithValidator(
+                    validatorUrl + "/v1/register-client",
+                    jsonPayload
+                );
             }
             
-            int responseCode = conn.getResponseCode();
-            String responseBody = "";
-            
-            // Read response
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(
-                        responseCode >= 200 && responseCode < 300 
-                            ? conn.getInputStream() 
-                            : conn.getErrorStream(),
-                        StandardCharsets.UTF_8))) {
-                String line;
-                StringBuilder response = new StringBuilder();
-                while ((line = reader.readLine()) != null) {
-                    response.append(line);
-                }
-                responseBody = response.toString();
-            }
-            
-            if (responseCode == 200) {
+            if (response.responseCode == HttpURLConnection.HTTP_OK) {
                 registered = true;
                 log.info("Sling author registered with validator");
                 log.info("  Client ID: {}", clientId);
                 log.info("  Wallet Address: {}", walletAddress);
-                log.info("  Validator: {}", validatorUrl);
+                log.info("  Validator: {}", response.endpoint);
             } else {
-                log.warn("Registration failed: HTTP {} - {}", responseCode, responseBody);
+                log.warn("Registration failed at {}: HTTP {} - {}",
+                    response.endpoint, response.responseCode, response.responseBody);
             }
             
         } catch (Exception e) {
@@ -331,5 +315,55 @@ public class SlingAuthorRegistrationService {
     public boolean isRegistered() {
         return registered;
     }
-}
 
+    private RegistrationResponse registerWithValidator(String registrationUrl, String jsonPayload) throws Exception {
+        URL url = new URL(registrationUrl);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        ValidatorAuthHelper.addAuthHeader(conn);
+        conn.setDoOutput(true);
+        conn.setConnectTimeout(5000);
+        conn.setReadTimeout(10000);
+
+        try (OutputStream os = conn.getOutputStream()) {
+            byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
+            os.write(input, 0, input.length);
+        }
+
+        int responseCode = conn.getResponseCode();
+        String responseBody = readResponseBody(conn, responseCode);
+        return new RegistrationResponse(registrationUrl, responseCode, responseBody);
+    }
+
+    private String readResponseBody(HttpURLConnection conn, int responseCode) throws Exception {
+        java.io.InputStream stream = responseCode >= 200 && responseCode < 300
+            ? conn.getInputStream()
+            : conn.getErrorStream();
+        if (stream == null) {
+            return "";
+        }
+
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line;
+            StringBuilder response = new StringBuilder();
+            while ((line = reader.readLine()) != null) {
+                response.append(line);
+            }
+            return response.toString();
+        }
+    }
+
+    private static final class RegistrationResponse {
+        private final String endpoint;
+        private final int responseCode;
+        private final String responseBody;
+
+        private RegistrationResponse(String endpoint, int responseCode, String responseBody) {
+            this.endpoint = endpoint;
+            this.responseCode = responseCode;
+            this.responseBody = responseBody;
+        }
+    }
+}

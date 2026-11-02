@@ -1,0 +1,8 @@
+{
+  "globalStoreUrl": "$[env:OAK_CHAIN_VALIDATOR_URL;default=http://localhost:8090]",
+  "syncInterval": 60,
+  "enabled": true,
+  "onlyFinalized": false,
+  "scheduler.period": 60,
+  "scheduler.concurrent": false
+}

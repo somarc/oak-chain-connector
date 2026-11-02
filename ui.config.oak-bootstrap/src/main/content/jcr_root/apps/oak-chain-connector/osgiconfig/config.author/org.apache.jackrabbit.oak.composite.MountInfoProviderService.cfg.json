@@ -1,0 +1,10 @@
+{
+  "mountedPaths": [
+    "/oak-chain"
+  ],
+  "mountName": "oak-chain",
+  "pathsSupportingFragments": [
+    "/oak:index/*$"
+  ],
+  "readOnlyMount": true
+}

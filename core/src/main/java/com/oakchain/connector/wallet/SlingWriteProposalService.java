@@ -16,6 +16,7 @@
  */
 package com.oakchain.connector.wallet;
 
+import com.oakchain.connector.persistence.ValidatorAuthHelper;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.ConfigurationPolicy;
@@ -214,6 +215,7 @@ public class SlingWriteProposalService {
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
             conn.setRequestProperty("X-Client-Id", clientId);
+            ValidatorAuthHelper.addAuthHeader(conn);
             conn.setDoOutput(true);
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(30000);

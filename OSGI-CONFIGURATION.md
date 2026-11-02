@@ -7,6 +7,7 @@ Complete guide to configuring the Oak Chain Connector for AEM.
 The connector uses AEM's standard OSGi configuration pattern with:
 
 - **Config files**: `.cfg.json` files in `ui.config` module
+- **Optional Oak bootstrap package**: separate `ui.config.oak-bootstrap` module for composite-store PIDs
 - **Environment variable substitution**: `$[env:VAR_NAME;default=value]`
 - **Runmode-specific configs**: `config.author` for author instances
 
@@ -20,6 +21,12 @@ All OSGi configurations are in:
 ui.config/src/main/content/jcr_root/apps/oak-chain-connector/osgiconfig/config.author/
 ```
 
+Optional Oak bootstrap configs live in:
+
+```
+ui.config.oak-bootstrap/src/main/content/jcr_root/apps/oak-chain-connector/osgiconfig/config.author/
+```
+
 **Why `config.author`?**
 
 The connector is designed for AEM Author instances that need to mount remote oak-chain content. Publish instances typically don't need this functionality.
@@ -28,6 +35,29 @@ The connector is designed for AEM Author instances that need to mount remote oak
 
 1. `com.oakchain.connector.persistence.HttpPersistenceService.cfg.json`
 2. `com.oakchain.connector.wallet.SlingAuthorWalletService.cfg.json`
+3. `com.oakchain.connector.wallet.SlingAuthorRegistrationService.cfg.json`
+4. `com.oakchain.connector.wallet.SlingWriteProposalService.cfg.json`
+5. `com.oakchain.connector.wallet.SlingDeleteProposalService.cfg.json`
+
+The shipped defaults are local-development oriented:
+
+- validator URL defaults to `http://localhost:8090`
+- wallet functionality defaults to disabled
+- registration and write/delete proposal services default to disabled
+
+The Oak composite/bootstrap PIDs are intentionally not part of the default package. They now live in a separate maintenance-window package because they reconfigure the primary Oak repository and should be treated as an offline/bootstrap step.
+
+### Optional Oak Bootstrap Package
+
+The opt-in `ui.config.oak-bootstrap` package contains:
+
+1. `org.apache.jackrabbit.oak.segment.SegmentNodeStoreFactory~default.cfg.json`
+2. `org.apache.jackrabbit.oak.segment.SegmentNodeStoreFactory~oak-chain.cfg.json`
+3. `org.apache.jackrabbit.oak.composite.MountInfoProviderService.cfg.json`
+4. `org.apache.jackrabbit.oak.composite.CompositeNodeStoreService.cfg.json`
+5. `org.apache.jackrabbit.oak.segment.sync.HttpSegmentStoreSync.cfg.json`
+
+Install that package only during a maintenance window and pair it with a planned AEM restart. See [OFFLINE-OAK-BOOTSTRAP-RUNBOOK.md](OFFLINE-OAK-BOOTSTRAP-RUNBOOK.md).
 
 ---
 
@@ -136,7 +166,7 @@ export OAK_CHAIN_VALIDATOR_URL="https://oak-chain.io"
 
 ```json
 {
-  "enabled": true,
+  "enabled": false,
   "keystorePath": "$[env:OAK_CHAIN_KEYSTORE_PATH;default=]"
 }
 ```
@@ -147,12 +177,14 @@ export OAK_CHAIN_VALIDATOR_URL="https://oak-chain.io"
 
 **Description**: Whether to enable wallet functionality.
 
-**Default**: `true`
+**Default**: `false`
 
 **When to disable:**
 - Read-only AEM instances (no write proposals)
 - Testing without wallet
 - Troubleshooting mount issues
+
+The packaged localhost defaults keep this disabled so the connector comes up read-only-first without requiring wallet or registration setup.
 
 **Impact when disabled:**
 - ✅ Can still mount and read oak-chain content
@@ -198,6 +230,69 @@ privateKey=0x1234567890abcdef... (64 hex chars)
 
 ---
 
+## SlingAuthorRegistrationService
+
+**Purpose**: Registers a wallet-backed Sling author with the validator for future write/delete proposal flows.
+
+**PID**: `com.oakchain.connector.wallet.SlingAuthorRegistrationService`
+
+### Configuration File
+
+```json
+{
+  "enabled": false,
+  "validatorUrl": "$[env:OAK_CHAIN_VALIDATOR_URL;default=http://localhost:8090]",
+  "clientId": "$[env:HOSTNAME;default=]",
+  "clientUrl": "$[env:SYSTEM_PUBLIC_URL;default=]"
+}
+```
+
+The shipped config keeps this disabled. Read-only mounting does not need registration.
+
+When you enable it, set a stable externally meaningful `clientUrl` rather than relying on the service fallback.
+
+---
+
+## SlingWriteProposalService
+
+**Purpose**: Submits signed write proposals to the validator.
+
+**PID**: `com.oakchain.connector.wallet.SlingWriteProposalService`
+
+### Configuration File
+
+```json
+{
+  "enabled": false,
+  "validatorUrl": "$[env:OAK_CHAIN_VALIDATOR_URL;default=http://localhost:8090]",
+  "clientId": "$[env:HOSTNAME;default=]"
+}
+```
+
+The shipped config keeps this disabled. Enabling it only makes sense after the wallet and registration services are configured.
+
+---
+
+## SlingDeleteProposalService
+
+**Purpose**: Submits signed delete proposals to the validator.
+
+**PID**: `com.oakchain.connector.wallet.SlingDeleteProposalService`
+
+### Configuration File
+
+```json
+{
+  "enabled": false,
+  "validatorUrl": "$[env:OAK_CHAIN_VALIDATOR_URL;default=http://localhost:8090]",
+  "clientId": "$[env:HOSTNAME;default=]"
+}
+```
+
+The shipped config keeps this disabled. Enabling it only makes sense after the wallet and registration services are configured.
+
+---
+
 ## Environment Variable Substitution
 
 AEM supports environment variable substitution in OSGi configs:
@@ -234,7 +329,7 @@ AEM supports environment variable substitution in OSGi configs:
 {
   "globalStoreUrl": "$[env:OAK_CHAIN_VALIDATOR_URL;default=http://localhost:8090]",
   "keystorePath": "$[env:OAK_CHAIN_KEYSTORE_PATH;default=]",
-  "enabled": "$[env:OAK_CHAIN_WALLET_ENABLED;default=true]"
+  "enabled": "$[env:OAK_CHAIN_WALLET_ENABLED;default=false]"
 }
 ```
 
@@ -410,6 +505,18 @@ To mount oak-chain content without wallet (read-only):
   "keystorePath": ""
 }
 ```
+
+```json
+{
+  "enabled": false
+}
+```
+
+Apply that disabled shape to:
+
+- `com.oakchain.connector.wallet.SlingAuthorRegistrationService`
+- `com.oakchain.connector.wallet.SlingWriteProposalService`
+- `com.oakchain.connector.wallet.SlingDeleteProposalService`
 
 ### Custom Health Check Intervals
 

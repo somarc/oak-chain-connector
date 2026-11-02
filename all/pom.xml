@@ -15,9 +15,10 @@
     <packaging>content-package</packaging>
 
     <name>Oak Chain Connector - All</name>
-    <description>Complete deployable package containing all modules</description>
+    <description>Runtime deployable package containing the application bundle; install config packages separately</description>
 
     <build>
+        <finalName>${connector.package.finalName}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.jackrabbit</groupId>
@@ -36,12 +37,6 @@
                             <type>zip</type>
                             <target>/apps/oak-chain-connector-packages/application/install</target>
                         </embedded>
-                        <embedded>
-                            <groupId>com.oakchain</groupId>
-                            <artifactId>oak-chain-connector.ui.config</artifactId>
-                            <type>zip</type>
-                            <target>/apps/oak-chain-connector-packages/application/install</target>
-                        </embedded>
                     </embeddeds>
                 </configuration>
             </plugin>
@@ -52,12 +47,6 @@
         <dependency>
             <groupId>com.oakchain</groupId>
             <artifactId>oak-chain-connector.ui.apps</artifactId>
-            <version>${project.version}</version>
-            <type>zip</type>
-        </dependency>
-        <dependency>
-            <groupId>com.oakchain</groupId>
-            <artifactId>oak-chain-connector.ui.config</artifactId>
             <version>${project.version}</version>
             <type>zip</type>
         </dependency>

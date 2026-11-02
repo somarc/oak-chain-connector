@@ -47,6 +47,9 @@ Export-Package: \
 
 # Import Oak SPI packages (provided by AEM)
 Import-Package: \
+    !sun.misc,\
+    !org.osgi.service.component.annotations,\
+    !org.osgi.service.metatype.annotations,\
     org.apache.jackrabbit.oak.segment.spi,\
     org.apache.jackrabbit.oak.segment.spi.monitor,\
     org.apache.jackrabbit.oak.segment.spi.persistence,\
@@ -54,8 +57,6 @@ Import-Package: \
     org.apache.jackrabbit.oak.commons,\
     javax.servlet;version="[3.1,5)";resolution:=optional,\
     javax.servlet.http;version="[3.1,5)";resolution:=optional,\
-    org.osgi.service.component.annotations;resolution:=optional,\
-    org.osgi.service.metatype.annotations;resolution:=optional,\
     org.slf4j,\
     *
 

@@ -25,6 +25,7 @@
         <module>core</module>
         <module>ui.apps</module>
         <module>ui.config</module>
+        <module>ui.config.oak-bootstrap</module>
         <module>all</module>
     </modules>
 
@@ -35,9 +36,13 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
 
-        <!-- Oak version - compatible with AEM 6.5.x and AEMaaCS -->
-        <!-- Using 1.40.0 - first version with stable oak-segment-remote -->
-        <oak.version>1.40.0</oak.version>
+        <!-- Oak build target -->
+        <!-- Default to public Apache Oak 1.78.0 so local/public builds stay reproducible.
+             Use -Paem65lts for the exact AEM 6.5 LTS / 6.6 line, or override
+             -Doak.version for other Oak branches. -->
+        <oak.version>1.78.0</oak.version>
+        <connector.target>oak-${oak.version}</connector.target>
+        <connector.package.finalName>oak-chain-connector-${connector.target}-${project.version}</connector.package.finalName>
 
         <!-- Plugin versions -->
         <bnd.version>6.4.0</bnd.version>
@@ -226,6 +231,15 @@
     </build>
 
     <profiles>
+        <!-- Exact AEM 6.5 LTS / 6.6 build target -->
+        <profile>
+            <id>aem65lts</id>
+            <properties>
+                <oak.version>1.78.1-B002</oak.version>
+                <connector.target>aem65lts</connector.target>
+            </properties>
+        </profile>
+
         <!-- Auto-install to local AEM Author instance -->
         <profile>
             <id>autoInstallPackage</id>

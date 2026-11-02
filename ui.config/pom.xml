@@ -15,9 +15,10 @@
     <packaging>content-package</packaging>
 
     <name>Oak Chain Connector - UI Config</name>
-    <description>Content package containing OSGi configurations</description>
+    <description>Content package containing connector-owned OSGi configurations</description>
 
     <build>
+        <finalName>oak-chain-connector-connector-config-${connector.target}-${project.version}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.jackrabbit</groupId>

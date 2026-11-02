@@ -1,0 +1,5 @@
+{
+  "enabled": false,
+  "validatorUrl": "$[env:OAK_CHAIN_VALIDATOR_URL;default=http://localhost:8090]",
+  "clientId": "$[env:HOSTNAME;default=]"
+}

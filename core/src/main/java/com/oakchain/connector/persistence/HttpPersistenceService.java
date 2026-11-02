@@ -197,6 +197,7 @@ public class HttpPersistenceService implements SegmentNodeStorePersistence {
             // Try to fetch journal.log - this is what the mount will need
             String url = globalStoreUrl + "/journal.log";
             HttpGet request = new HttpGet(url);
+            ValidatorAuthHelper.addAuthHeader(request);
             
             try (CloseableHttpResponse response = client.execute(request)) {
                 int status = response.getStatusLine().getStatusCode();
@@ -333,4 +334,3 @@ public class HttpPersistenceService implements SegmentNodeStorePersistence {
         return delegate.lockRepository();
     }
 }
-

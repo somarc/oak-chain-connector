@@ -1,0 +1,7 @@
+{
+  "seedMount": "oak-chain",
+  "enabled": true,
+  "enableChecks": false,
+  "partialReadOnly": true,
+  "pathStats": false
+}

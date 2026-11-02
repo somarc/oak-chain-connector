@@ -108,9 +108,7 @@ public class Http2ClientPool {
      * @throws Exception if request fails
      */
     public byte[] get(String url) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create(url))
-            .timeout(REQUEST_TIMEOUT)
+        HttpRequest request = newRequestBuilder(url)
             .GET()
             .build();
         
@@ -142,9 +140,7 @@ public class Http2ClientPool {
      * @throws Exception if request fails
      */
     public String getString(String url) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create(url))
-            .timeout(REQUEST_TIMEOUT)
+        HttpRequest request = newRequestBuilder(url)
             .GET()
             .build();
         
@@ -173,9 +169,7 @@ public class Http2ClientPool {
      */
     public boolean exists(String url) {
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(REQUEST_TIMEOUT)
+            HttpRequest request = newRequestBuilder(url)
                 .method("HEAD", HttpRequest.BodyPublishers.noBody())
                 .build();
             
@@ -224,5 +218,18 @@ public class Http2ClientPool {
     public void shutdown() {
         log.info("Shutting down HTTP/2 Client Pool. Final stats: {}", getPoolStats());
         // Java HttpClient doesn't need explicit shutdown, but log final stats
+    }
+
+    private HttpRequest.Builder newRequestBuilder(String url) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .timeout(REQUEST_TIMEOUT);
+
+        String token = ValidatorAuthHelper.getAuthToken();
+        if (token != null) {
+            builder.header(ValidatorAuthHelper.AUTHORIZATION_HEADER, token);
+        }
+
+        return builder;
     }
 }

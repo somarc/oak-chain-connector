@@ -7,7 +7,7 @@ AEM integration add-on for mounting the oak-chain distributed content network.
 
 ## Overview
 
-This project enables existing Adobe Experience Manager (AEM) instances to mount and access the oak-chain distributed content repository via Oak's public SPI layer. It follows the Adobe AEM Project Archetype structure for seamless integration with AEM 6.5.x and AEM as a Cloud Service.
+This project enables existing Adobe Experience Manager (AEM) instances to mount and access the oak-chain distributed content repository via Oak's public SPI layer. It follows the Adobe AEM Project Archetype structure and uses profile-driven builds so the connector can be compiled against the Oak line exported by the target AEM runtime.
 
 ## Relationship to `oak-segment-http`
 
@@ -35,8 +35,8 @@ The connector uses Oak's public `SegmentNodeStorePersistence` SPI to provide HTT
 - **HttpPersistence**: Implements `SegmentNodeStorePersistence` for HTTP/2-based segment access
 - **HttpSegmentArchiveManager**: Manages remote segment archives via HTTP
 - **HttpSegmentArchiveReader**: Fetches individual segments on-demand
-- **SlingAuthorWalletService**: Manages Ethereum wallet for write proposals
-- **SlingAuthorRegistrationService**: Registers Sling author with validators
+- **SlingAuthorWalletService**: Optional Ethereum wallet for future write/delete proposal flows
+- **SlingAuthorRegistrationService**: Optional validator registration for future write/delete proposal flows
 
 ## Project Structure
 
@@ -44,8 +44,9 @@ The connector uses Oak's public `SegmentNodeStorePersistence` SPI to provide HTT
 oak-chain-connector/
 ├── core/                    # OSGi bundle with Java code
 ├── ui.apps/                 # Content package (/apps)
-├── ui.config/               # OSGi configurations
-└── all/                     # Complete deployable package
+├── ui.config/               # Connector-owned OSGi configurations
+├── ui.config.oak-bootstrap/ # Optional Oak composite/bootstrap configs
+└── all/                     # Runtime deployable package
 ```
 
 ## Build
@@ -54,31 +55,87 @@ oak-chain-connector/
 mvn clean install
 ```
 
-The build creates:
-- `core/target/oak-chain-connector.core-1.0.0-SNAPSHOT.jar` - OSGi bundle
-- `all/target/oak-chain-connector.all-1.0.0-SNAPSHOT.zip` - Complete package
+Default builds compile against public Apache Oak `1.78.0`, which is the open-source compatibility baseline for the current connector code.
+
+Exact AEM 6.5 LTS / 6.6 builds use the pinned Oak line:
+
+```bash
+mvn clean install -Paem65lts
+```
+
+That profile pins `oak.version=1.78.1-B002`.
+
+For other Oak branches, override the version explicitly:
+
+```bash
+mvn clean install -Doak.version=1.92.0 -Dconnector.target=oak-1.92.0
+```
+
+The runtime package is emitted under `all/target/` as:
+- `oak-chain-connector-<target>-1.0.0-SNAPSHOT.zip`
+
+The direct-install config packages are emitted under:
+- `ui.config/target/oak-chain-connector-connector-config-<target>-1.0.0-SNAPSHOT.zip`
+- `ui.config.oak-bootstrap/target/oak-chain-connector-oak-bootstrap-<target>-1.0.0-SNAPSHOT.zip`
+
+Examples:
+- `oak-chain-connector-oak-1.78.0-1.0.0-SNAPSHOT.zip`
+- `oak-chain-connector-aem65lts-1.0.0-SNAPSHOT.zip`
+
+For AEM-patched builds, note the runtime-to-Maven version translation:
+- AEM runtime may report `1.78.1.B002`
+- Adobe Maven artifacts are published as `1.78.1-B002`
+
+Exact AEM-patched versions require access to Adobe artifact repositories.
 
 ## Installation
 
 ### Via Package Manager
 
-1. Upload `all/target/oak-chain-connector.all-1.0.0-SNAPSHOT.zip` to AEM Package Manager
-2. Install the package
-3. Configure the OSGi services (see Configuration below)
+1. Install the runtime package from `all/target/`
+2. Install the connector config package from `ui.config/target/`
+3. If you want the Oak composite mount bootstrap path, install the opt-in bootstrap package from `ui.config.oak-bootstrap/target/` during a maintenance window and restart AEM
+
+For the exact sequence, see **[OFFLINE-OAK-BOOTSTRAP-RUNBOOK.md](OFFLINE-OAK-BOOTSTRAP-RUNBOOK.md)**.
+
+If you are upgrading from an earlier build where `ui.config` also carried the Oak bootstrap PIDs, remove those older Oak-side config nodes first. The new connector-only `ui.config` package does not delete legacy bootstrap nodes automatically. The explicit cleanup list is in [OFFLINE-OAK-BOOTSTRAP-RUNBOOK.md](OFFLINE-OAK-BOOTSTRAP-RUNBOOK.md).
 
 ### Via Maven
 
 ```bash
-# Install to local AEM Author instance
-mvn clean install -PautoInstallPackage
+# Install the runtime package to local AEM Author using the exact AEM 6.5 LTS build
+mvn clean install -Paem65lts -PautoInstallPackage
 
 # Install bundle only (faster for development)
 mvn clean install -PautoInstallBundle -pl core
 ```
 
+`autoInstallPackage` installs the runtime package. Install the config packages separately per [OFFLINE-OAK-BOOTSTRAP-RUNBOOK.md](OFFLINE-OAK-BOOTSTRAP-RUNBOOK.md).
+
+Or use the helper script:
+
+```bash
+./deploy.sh --profile aem65lts
+```
+
 ## Configuration
 
-The connector uses OSGi configuration with environment variable substitution. For complete configuration details, see **[OSGI-CONFIGURATION.md](OSGI-CONFIGURATION.md)**.
+The connector uses OSGi configuration with environment variable substitution.
+
+For the full operator setup, including the AEM composite NodeStore configuration that sits around the connector, see **[END-TO-END-CONFIGURATION.md](END-TO-END-CONFIGURATION.md)**.
+
+For connector-specific OSGi property details, see **[OSGI-CONFIGURATION.md](OSGI-CONFIGURATION.md)**.
+
+For the enterprise offline/bootstrap sequence, see **[OFFLINE-OAK-BOOTSTRAP-RUNBOOK.md](OFFLINE-OAK-BOOTSTRAP-RUNBOOK.md)**.
+
+Important distinction:
+
+- Read-only mounting does not require client registration.
+- Wallet registration is only required for write/delete proposal flows.
+- The shipped `ui.config` package contains connector-owned read-plane defaults only.
+- Oak composite/bootstrap configs now live in a separate `ui.config.oak-bootstrap` package.
+- Wallet, registration, and write/delete proposal services ship disabled by default.
+- Those defaults assume a local QuickStart-style setup and a validator at `http://localhost:8090`.
 
 ### Quick Configuration
 
@@ -88,6 +145,13 @@ export OAK_CHAIN_VALIDATOR_URL="http://localhost:8090"
 export OAK_CHAIN_KEYSTORE_PATH="/path/to/wallet.properties"
 ```
 
+Packaged local defaults:
+
+- validator URL defaults to `http://localhost:8090`
+- wallet service defaults to disabled
+- registration and write/delete proposal services default to disabled
+- Oak composite mount configs are not auto-applied by the default package
+
 **Or configure via Web Console:** `/system/console/configMgr`
 
 ### HTTP Persistence Service
@@ -96,7 +160,7 @@ export OAK_CHAIN_KEYSTORE_PATH="/path/to/wallet.properties"
 
 **Key Properties:**
 - `globalStoreUrl` - Validator URL (env: `OAK_CHAIN_VALIDATOR_URL`)
-- `lazyMount` - Wait for validator availability (default: true)
+- `lazyMount` - Wait for validator availability (default: true in shipped config)
 - `healthCheckIntervalSeconds` - Health check interval (default: 10)
 - `connectionTimeoutMs` - Connection timeout (default: 3000)
 
@@ -105,19 +169,20 @@ export OAK_CHAIN_KEYSTORE_PATH="/path/to/wallet.properties"
 **PID**: `com.oakchain.connector.wallet.SlingAuthorWalletService`
 
 **Key Properties:**
-- `enabled` - Enable wallet functionality (default: true)
+- `enabled` - Enable wallet functionality (default: false in shipped config)
 - `keystorePath` - Wallet keystore path (env: `OAK_CHAIN_KEYSTORE_PATH`)
 
 **See [OSGI-CONFIGURATION.md](OSGI-CONFIGURATION.md) for detailed configuration guide.**
 
 ## AEM Compatibility
 
-| AEM Version | Oak Version | Status |
-|-------------|-------------|--------|
-| AEM 6.5.x | 1.22+ | Compatible |
-| AEM as a Cloud Service | 1.40+ | Compatible |
+| Target | Oak Version | Build Mode | Notes |
+|--------|-------------|------------|-------|
+| AEM 6.5 LTS / 6.6 | runtime `1.78.1.B002` / Maven `1.78.1-B002` | `-Paem65lts` | Exact AEM-targeted build |
+| Public compatibility baseline | `1.78.0` | default | Reproducible local/public compile target |
+| Other Oak branches | exact branch version | `-Doak.version=...` | Use `-Dconnector.target=...` for distinct ZIP naming |
 
-The connector uses stable Oak SPI interfaces that have been consistent since Oak 1.10.
+For AEM as a Cloud Service, build against the exact Oak coordinate from the target SDK/runtime rather than assuming a generic `1.89.0`.
 
 ## Development
 
@@ -147,7 +212,7 @@ The project follows standard Apache coding conventions:
 2. **Composite Mount**: Oak's composite store detects the new persistence layer
 3. **Lazy Initialization**: Health checks ensure validator is available before mounting
 4. **HTTP/2 Access**: Segments fetched on-demand via multiplexed HTTP/2 connections
-5. **Wallet Integration**: Sling author uses secp256k1 wallet for write proposals
+5. **Optional Wallet Integration**: Sling author can use a secp256k1 wallet for write proposals when the write plane is explicitly enabled
 
 ## Troubleshooting
 

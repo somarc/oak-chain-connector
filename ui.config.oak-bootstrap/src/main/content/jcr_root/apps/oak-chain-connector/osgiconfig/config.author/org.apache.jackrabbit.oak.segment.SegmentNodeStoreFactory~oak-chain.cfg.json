@@ -1,0 +1,9 @@
+{
+  "name": "Oak Chain HTTP Mount",
+  "role": "composite-mount-oak-chain",
+  "repository.home": "$[env:OAK_CHAIN_CACHE_HOME;default=crx-quickstart/http-segment-cache]",
+  "customBlobStore": false,
+  "customSegmentStore": true,
+  "registerDescriptors": false,
+  "dispatchChanges": false
+}

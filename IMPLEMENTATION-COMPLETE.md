@@ -1,5 +1,7 @@
 # Oak Chain Connector - Implementation Complete
 
+> Historical note: this document describes the initial migration baseline. Current release targeting is profile-driven and no longer centered on Oak `1.40.0`; see [VERSIONING-STRATEGY.md](VERSIONING-STRATEGY.md) for the active AEM/Oak build matrix.
+
 ## Status: ✅ READY FOR DEPLOYMENT
 
 The Oak Chain Connector has been successfully refactored from the forked `oak-segment-http` module into a standalone AEM add-on project following the Adobe AEM Project Archetype structure.
@@ -173,10 +175,10 @@ Same approach as `oak-segment-azure` and `oak-segment-aws`:
 - No Oak internals required
 
 ### ✅ AEM Compatible
-- AEM 6.5.x: Oak 1.40+ compatible
-- AEM as a Cloud Service: Oak 1.40+ compatible
-- No custom Oak build required
-- Works with standard AEM installations
+- Initial migration baseline compiled against Oak 1.40.0
+- Current release targeting is handled via Maven profiles and `oak.version` overrides
+- No custom Oak code fork is required in the connector itself
+- Works with standard AEM installations when built against the target runtime's Oak line
 
 ---
 
