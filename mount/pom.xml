@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Oak Chain read-only composite mount for AEM 6.5 LTS (stock Apache Oak 2.4.0).
+
+  Registers one org.apache.jackrabbit.oak.spi.state.NodeStoreProvider with
+  role=composite-mount-<name>. The Segment Tar classes it needs are embedded
+  privately (never exported), so no Oak bundle is modified, and no
+  SegmentNodeStorePersistence service is ever registered.
+
+  Standalone on purpose: the reactor parent still targets Oak 1.40.0.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.oakchain</groupId>
+    <artifactId>oak-chain-connector.mount</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+    <name>Oak Chain Connector - Composite Mount (AEM 6.5 LTS)</name>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>17</maven.compiler.release>
+        <!-- Must equal the Oak line of the target AEM: 6.5 LTS SP3 ships Apache Oak 2.4.0 byte-identical. -->
+        <oak.version>2.4.0</oak.version>
+        <bnd.version>7.1.0</bnd.version>
+    </properties>
+
+    <dependencies>
+        <!-- Embedded privately via -conditionalpackage (see bnd instructions). -->
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-segment-tar</artifactId>
+            <version>${oak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Imported from the running AEM. -->
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-store-spi</artifactId>
+            <version>${oak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-core-spi</artifactId>
+            <version>${oak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-blob</artifactId>
+            <version>${oak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-api</artifactId>
+            <version>${oak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-commons</artifactId>
+            <version>${oak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>osgi.core</artifactId>
+            <version>7.0.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.component.annotations</artifactId>
+            <version>1.4.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.metatype.annotations</artifactId>
+            <version>1.4.1</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Embedded privately: AEM 6.5 LTS API controller restricts com.codahale.metrics
+             (com.adobe.granite.dropwizard.metrics) to com.adobe/com.day/org.apache.jackrabbit/org.apache.sling bundles. -->
+        <dependency>
+            <groupId>io.dropwizard.metrics</groupId>
+            <artifactId>metrics-core</artifactId>
+            <version>3.2.3</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.7.36</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains</groupId>
+            <artifactId>annotations</artifactId>
+            <version>24.1.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Test runtime: what AEM's other bundles provide to Segment Tar at runtime
+             (Oak declares these provided, so they are not transitive). Versions per oak-parent 2.4.0. -->
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-store-composite</artifactId>
+            <version>${oak.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>oak-blob-plugins</artifactId>
+            <version>${oak.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.21.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.20.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-text</artifactId>
+            <version>1.15.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>javax.jcr</groupId>
+            <artifactId>jcr</artifactId>
+            <version>2.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jackrabbit</groupId>
+            <artifactId>jackrabbit-jcr-commons</artifactId>
+            <version>2.22.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>1.7.36</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+            <plugin>
+                <groupId>biz.aQute.bnd</groupId>
+                <artifactId>bnd-maven-plugin</artifactId>
+                <version>${bnd.version}</version>
+                <executions>
+                    <execution>
+                        <id>bnd-process</id>
+                        <goals>
+                            <goal>bnd-process</goal>
+                        </goals>
+                        <configuration>
+                            <bnd><![CDATA[
+Bundle-SymbolicName: com.oakchain.connector.mount
+Bundle-Description: Read-only, lazily connected Oak Chain composite mount (NodeStoreProvider) for AEM 6.5 LTS / Oak 2.4.0
+# Nothing is exported. Our own code stays private.
+-exportcontents:
+Private-Package: com.oakchain.connector.mount.*
+# Pull exactly the Segment Tar packages our code reaches into the bundle, privately.
+# The spi.* packages are embedded too, so SegmentGraph and the persistence SPI come
+# from one class loader and our persistence can never match AEM's SegmentNodeStorePersistence.
+-conditionalpackage: org.apache.jackrabbit.oak.segment.*, org.apache.jackrabbit.oak.backup.*, com.codahale.metrics.*
+# Never import Segment Tar internals or its privately embedded netty from AEM.
+Import-Package: \
+    !org.apache.jackrabbit.oak.segment.*, \
+    !org.apache.jackrabbit.oak.backup.*, \
+    !io.netty.*, \
+    !com.codahale.metrics.*, \
+    *
+# Only generate DS/metatype for our own component, never for embedded Oak components.
+-dsannotations: com.oakchain.connector.mount.*
+-metatypeannotations: com.oakchain.connector.mount.*
+-noextraheaders: true
+                            ]]></bnd>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+                <configuration>
+                    <archive>
+                        <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.4</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>
