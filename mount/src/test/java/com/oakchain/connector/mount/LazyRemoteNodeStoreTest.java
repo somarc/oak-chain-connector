@@ -337,15 +337,15 @@ public class LazyRemoteNodeStoreTest {
     }
 
     /**
-     * Validators write shard and content folders without jcr:primaryType; Oak's JCR layer throws
-     * for those, so the mount presents nt:unstructured. Real types are kept, and a diff between
+     * Validators before genesis 2.2.0 wrote shard and content folders without jcr:primaryType; Oak's
+     * JCR layer throws for those, so the mount presents oak:Unstructured. Real types are kept, and a diff between
      * two mount roots reports only the real change.
      */
     @Test
     public void untypedValidatorNodesReadAsUnstructured() throws Exception {
         NodeBuilder b = validator.getRoot().builder();
         NodeBuilder folder = b.child("oak-chain").child("8a").child("content");
-        folder.child("typed").setProperty("jcr:primaryType", "nt:unstructured"); // STRING, as validators write it
+        folder.child("typed").setProperty("jcr:primaryType", "nt:unstructured"); // STRING, as validators before 2.2.0 wrote it
         validator.merge(b, EmptyHook.INSTANCE, CommitInfo.EMPTY);
         validatorStore.flush();
         startServer();
@@ -355,6 +355,7 @@ public class LazyRemoteNodeStoreTest {
             NodeState before = mount.getRoot();
             NodeState shard = before.getChildNode("oak-chain").getChildNode("8a");
             assertEquals(TypedNodeState.DEFAULT_TYPE, shard.getProperty("jcr:primaryType"));
+            assertEquals("oak:Unstructured", shard.getName("jcr:primaryType"));
             assertEquals(Type.NAME, shard.getChildNode("content").getProperty("jcr:primaryType").getType());
             NodeState typed = shard.getChildNode("content").getChildNode("typed");
             assertEquals(Type.STRING, typed.getProperty("jcr:primaryType").getType());

@@ -37,7 +37,7 @@ SlingRepositoryManager ──binds NodeStore──▶ CompositeNodeStore (stock 
 | Empty root until the validator answers; a background thread connects and follows the journal head. `getRoot()` never throws. | The composite calls the mount's `getRoot()` on every repository root read. |
 | No checkpoints on the mount. | `CompositeNodeStore` checkpoints only the global store and reads read-only mounts at their current root. |
 | Journal read newest-first. | Oak's `JournalReader` expects that; the validator serves the file oldest-first. |
-| Every mounted node has a primary type (`TypedNodeState`): a missing `jcr:primaryType` reads as `nt:unstructured`. Diffs between decorated states delegate to the segment store. | Validators write shard and wallet `content` folders without one, and that history is immutable. Oak's JCR layer throws for such nodes, and Sling logged four ERRORs with stack traces per read (about 470,000 log lines in four minutes in the lab). The delegation keeps Oak's record-id fast path for unchanged subtrees. |
+| Every mounted node has a primary type (`TypedNodeState`): a missing `jcr:primaryType` reads as `oak:Unstructured`. Diffs between decorated states delegate to the segment store. | Validators before genesis 2.2.0 wrote shard, wallet `content` and organization folders without one, and that history is immutable. From genesis 2.2.0 every container is `oak:Unstructured` and every record `nt:unstructured`, so on a new chain this changes nothing. Oak's JCR layer throws for such nodes, and Sling logged four ERRORs with stack traces per read (about 470,000 log lines in four minutes in the lab). The delegation keeps Oak's record-id fast path for unchanged subtrees. |
 
 ## Opt-in flow
 

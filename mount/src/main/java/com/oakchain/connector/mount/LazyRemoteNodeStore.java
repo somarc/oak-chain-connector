@@ -46,7 +46,7 @@ import org.slf4j.LoggerFactory;
  *   <li>{@link #getRoot()} never throws: the composite calls it on every root read, for the
  *       whole repository.</li>
  *   <li>Nodes the validator wrote without {@code jcr:primaryType} read as
- *       {@code nt:unstructured} ({@link TypedNodeState}).</li>
+ *       {@code oak:Unstructured} ({@link TypedNodeState}).</li>
  *   <li>Checkpoints: the composite only checkpoints the global store and reads read-only
  *       mounts at their current root, so this store exposes none.</li>
  * </ul>

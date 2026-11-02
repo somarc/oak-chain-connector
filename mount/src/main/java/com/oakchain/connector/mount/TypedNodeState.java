@@ -19,12 +19,13 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * The mounted validator tree as valid JCR: a node without {@code jcr:primaryType} reads as
- * {@code nt:unstructured}.
+ * {@code oak:Unstructured}.
  *
  * <p>JCR requires a primary type on every node, and Oak's JCR layer throws for a node without
- * one. Validators write shard folders ({@code /oak-chain/8a/ff/b4}) and wallet {@code content}
- * folders without it, and that history is immutable, so the mount supplies the default instead
- * of AEM logging an ERROR with a stack trace for every ancestor of every read.
+ * one. Validators before genesis 2.2.0 wrote shard, wallet {@code content} and organization
+ * folders without it, and that history is immutable, so the mount supplies the type genesis
+ * 2.2.0 gives those folders instead of AEM logging an ERROR with a stack trace for every
+ * ancestor of every read. On a 2.2.0 chain every node is typed and this changes nothing.
  *
  * <p>Diffs between two decorated states delegate to the segment store, so unchanged subtrees
  * keep Oak's record-id fast path; the synthesized property never shows up as a change.
@@ -32,7 +33,7 @@ import org.jetbrains.annotations.Nullable;
 final class TypedNodeState extends AbstractNodeState {
 
     static final String JCR_PRIMARYTYPE = "jcr:primaryType";
-    static final PropertyState DEFAULT_TYPE = PropertyStates.createProperty(JCR_PRIMARYTYPE, "nt:unstructured", Type.NAME);
+    static final PropertyState DEFAULT_TYPE = PropertyStates.createProperty(JCR_PRIMARYTYPE, "oak:Unstructured", Type.NAME);
 
     private final NodeState delegate;
 
