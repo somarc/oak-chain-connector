@@ -52,7 +52,7 @@ public final class HttpBlobStore implements BlobStore {
             }
         }
         try (InputStream in = getInputStream(blobId)) {
-            return in.transferTo(OutputStreamNull.INSTANCE);
+            return in.transferTo(java.io.OutputStream.nullOutputStream());
         }
     }
 
@@ -88,17 +88,5 @@ public final class HttpBlobStore implements BlobStore {
     @Override
     public void close() {
         // the HTTP client is owned by the mount
-    }
-
-    private static final class OutputStreamNull extends java.io.OutputStream {
-        static final OutputStreamNull INSTANCE = new OutputStreamNull();
-
-        @Override
-        public void write(int b) {
-        }
-
-        @Override
-        public void write(byte[] b, int off, int len) {
-        }
     }
 }

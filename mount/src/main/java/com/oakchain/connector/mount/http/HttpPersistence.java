@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
+import java.util.stream.Collectors;
 
 import org.apache.jackrabbit.oak.segment.spi.monitor.FileStoreMonitor;
 import org.apache.jackrabbit.oak.segment.spi.monitor.IOMonitor;
@@ -111,14 +112,7 @@ public final class HttpPersistence implements SegmentNodeStorePersistence {
     }
 
     static List<String> nonEmptyLines(String body) {
-        List<String> lines = new ArrayList<>();
-        for (String line : body.split("\n")) {
-            String trimmed = line.trim();
-            if (!trimmed.isEmpty()) {
-                lines.add(trimmed);
-            }
-        }
-        return lines;
+        return body.lines().map(String::trim).filter(l -> !l.isEmpty()).collect(Collectors.toCollection(ArrayList::new));
     }
 
     /** Journal served oldest-first by the validator; Oak reads newest-first. */
