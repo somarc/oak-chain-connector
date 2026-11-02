@@ -42,6 +42,9 @@ final class OptInPlan {
     static final String COMPOSITE_PID = "org.apache.jackrabbit.oak.composite.CompositeNodeStoreService";
     static final String PROVIDER_PID = "com.oakchain.connector.mount.OakChainMountProvider";
     static final String DOCUMENT_PID = "org.apache.jackrabbit.oak.plugins.document.DocumentNodeStoreService";
+    /** AEM's "Revision Clean Up" maintenance task: the factory config AEM 6.5 LTS ships (launchpad resource). */
+    static final String REVISION_CLEANUP_PID = "com.adobe.granite.maintenance.crx.impl.RevisionCleanupTask~main";
+    static final String GLOBAL_ROLE = "composite-global";
 
     static final String GLOBAL_TAR_ROLE = "oakchain-global-tar";
     static final String PRIMARY_DISABLED_ROLE = "oakchain-primary-disabled";
@@ -131,6 +134,11 @@ final class OptInPlan {
         out.add(foreignCheck("TAR persistence config", persisted(TAR_PID), false));
         out.add(foreignCheck("Global store config", persisted(GLOBAL_PID), false));
         out.add(foreignCheck("install/ primary override", aem.quickstart.resolve(PRIMARY_INSTALL_FILE), false));
+        boolean cleanup = Files.isRegularFile(persisted(REVISION_CLEANUP_PID));
+        out.add(new Check(cleanup ? Status.PASS : Status.WARN, "Revision Clean Up task",
+                cleanup ? "RevisionCleanupTask~main present; enable sets role=" + GLOBAL_ROLE
+                        : "RevisionCleanupTask~main not found; set role=" + GLOBAL_ROLE
+                        + " on your RevisionCleanupTask config, or daily maintenance will not compact the repository"));
 
         OsgiCheck osgi = new OsgiCheck(aem);
         boolean composite = hasBundle("org.apache.jackrabbit.oak-store-composite", null);
@@ -229,7 +237,7 @@ final class OptInPlan {
                 global.putRaw(k, original.raw(k));
             }
         }
-        global.putString("role", "composite-global")
+        global.putString("role", GLOBAL_ROLE)
                 .putBool("customSegmentStore", true)
                 .putString("segmentStore.target", "(role=" + GLOBAL_TAR_ROLE + ")")
                 .putBool("customBlobStore", original.bool("customBlobStore", false))
@@ -261,6 +269,16 @@ final class OptInPlan {
                 .putBool(MARKER, true)
                 .putString("service.pid", COMPOSITE_PID).render());
 
+        // Revision Clean Up asks Oak's RepositoryManager for the RevisionGCMBean without a role, which
+        // matches only beans with no role property. After opt-in the one revision GC is the global
+        // store's (role=composite-global), so without this AEM's daily maintenance never compacts.
+        // Only the shipped ~main instance is edited in place; creating one could start a second task.
+        if (hasOriginal(REVISION_CLEANUP_PID)) {
+            files.put(rel(persisted(REVISION_CLEANUP_PID)), originalConfig(REVISION_CLEANUP_PID)
+                    .putString("role", GLOBAL_ROLE)
+                    .putBool(MARKER, true).render());
+        }
+
         FelixConfig provider = new FelixConfig()
                 .putString("role", p.role())
                 .putString("validator.url", p.validatorUrl())
@@ -272,6 +290,29 @@ final class OptInPlan {
         }
         files.put(rel(persisted(PROVIDER_PID)), provider.render());
         return files;
+    }
+
+    /** Whether a config existed before opt-in (it is backed up, or present and not written by us). */
+    private boolean hasOriginal(String pid) throws IOException {
+        Path backup = aem.optInDir.resolve("backup").resolve(rel(persisted(pid)));
+        return Files.isRegularFile(backup)
+                || (Files.isRegularFile(persisted(pid)) && !FelixConfig.read(persisted(pid)).has(MARKER));
+    }
+
+    /** A config as it was before opt-in: the backup when already enabled, else the current file, else empty. */
+    private FelixConfig originalConfig(String pid) throws IOException {
+        Path backup = aem.optInDir.resolve("backup").resolve(rel(persisted(pid)));
+        if (Files.isRegularFile(backup)) {
+            return FelixConfig.read(backup);
+        }
+        Path current = persisted(pid);
+        if (Files.isRegularFile(current)) {
+            FelixConfig c = FelixConfig.read(current);
+            if (!c.has(MARKER)) {
+                return c;
+            }
+        }
+        return new FelixConfig();
     }
 
     /** The primary store config as it was before opt-in (from the backup when already enabled). */
@@ -287,10 +328,9 @@ final class OptInPlan {
         Path backupDir = aem.optInDir.resolve("backup");
         Files.createDirectories(backupDir);
 
-        int i = 0;
         for (Map.Entry<String, String> f : files.entrySet()) {
             Path target = aem.quickstart.resolve(f.getKey());
-            String key = "file." + i++;
+            String key = stateKey(state, f.getKey());
             boolean already = state.containsKey(key + ".path");
             if (!already && Files.exists(target)) {
                 Path backup = backupDir.resolve(f.getKey());
@@ -324,6 +364,20 @@ final class OptInPlan {
         state.setProperty("cleanup.emptyDir", aem.repositoryHome().resolve("segmentstore-composite-global").toString());
         saveState(state);
         return log;
+    }
+
+    /**
+     * The state slot of a managed file: its existing slot, else the first free one. By path, not
+     * position, so a re-enable that manages a different set of files never mixes up originals.
+     */
+    static String stateKey(Properties state, String path) {
+        int n = 0;
+        for (; state.containsKey("file." + n + ".path"); n++) {
+            if (path.equals(state.getProperty("file." + n + ".path"))) {
+                return "file." + n;
+            }
+        }
+        return "file." + n;
     }
 
     // ------------------------------------------------------------------ status / disable

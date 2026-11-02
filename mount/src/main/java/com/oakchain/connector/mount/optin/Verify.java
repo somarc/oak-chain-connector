@@ -82,7 +82,8 @@ final class Verify {
         if (aem != null) {
             List<String> log = aem.currentBootLog();
             long composites = log.stream().filter(l -> l.contains("Registering the composite node store")).count();
-            long errors = log.stream().filter(l -> l.contains("*ERROR*")).count();
+            // Not our own --write-probe: Sling logs its intended rejection at ERROR.
+            long errors = log.stream().filter(l -> l.contains("*ERROR*") && !l.contains("oakchain-verify-probe")).count();
             boolean unresolved = log.stream().anyMatch(l -> l.contains("Unable to resolve " + BUNDLE));
             if (expectMount) {
                 out.add(new Check(composites == 1 ? Status.PASS : Status.FAIL, "Composite registrations this boot",
@@ -102,6 +103,21 @@ final class Verify {
             out.add(new Check(errors == 0 ? Status.PASS : Status.INFO, "ERROR lines this boot", String.valueOf(errors)));
         }
 
+        if (expectMount) {
+            // AEM's Revision Clean Up must name the global store's role, or daily maintenance never compacts.
+            String role = null;
+            try {
+                role = configValue(body("/system/console/status-Configurations.txt"), OptInPlan.REVISION_CLEANUP_PID, "role");
+            } catch (RuntimeException e) {
+                // reported below
+            }
+            boolean ok = OptInPlan.GLOBAL_ROLE.equals(role);
+            out.add(new Check(ok ? Status.PASS : Status.FAIL, "Revision Clean Up role",
+                    ok ? "role=" + role + " (daily maintenance compacts the global store)"
+                       : "effective role is " + (role == null ? "unset" : role) + "; expected " + OptInPlan.GLOBAL_ROLE
+                         + " (a code-base config of RevisionCleanupTask overrides it?)"));
+        }
+
         if (writeProbe && expectMount) {
             int rejected = post(mountPath + "/oakchain-verify-probe", "probe=1");
             out.add(new Check(rejected >= 400 ? Status.PASS : Status.FAIL, "Write under mount rejected", "HTTP " + rejected));
@@ -111,6 +127,22 @@ final class Verify {
                     "create HTTP " + created + ", delete HTTP " + deleted));
         }
         return out;
+    }
+
+    /** A property of one PID in the web console's Configurations status ("PID = ..." blocks, "  key = value"). */
+    static String configValue(String status, String pid, String key) {
+        int at = status.indexOf("PID = " + pid + "\n");
+        if (at < 0) {
+            return null;
+        }
+        int end = status.indexOf("\n\n", at);
+        for (String line : status.substring(at, end < 0 ? status.length() : end).split("\n")) {
+            String t = line.trim();
+            if (t.startsWith(key + " = ")) {
+                return t.substring(key.length() + 3).trim();
+            }
+        }
+        return null;
     }
 
     private static final Pattern COUNTS = Pattern.compile("\"s\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)");

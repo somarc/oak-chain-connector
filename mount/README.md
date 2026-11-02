@@ -37,6 +37,7 @@ SlingRepositoryManager ──binds NodeStore──▶ CompositeNodeStore (stock 
 | Empty root until the validator answers; a background thread connects and follows the journal head. `getRoot()` never throws. | The composite calls the mount's `getRoot()` on every repository root read. |
 | No checkpoints on the mount. | `CompositeNodeStore` checkpoints only the global store and reads read-only mounts at their current root. |
 | Journal read newest-first. | Oak's `JournalReader` expects that; the validator serves the file oldest-first. |
+| Every mounted node has a primary type (`TypedNodeState`): a missing `jcr:primaryType` reads as `nt:unstructured`. Diffs between decorated states delegate to the segment store. | Validators write shard and wallet `content` folders without one, and that history is immutable. Oak's JCR layer throws for such nodes, and Sling logged four ERRORs with stack traces per read (about 470,000 log lines in four minutes in the lab). The delegation keeps Oak's record-id fast path for unchanged subtrees. |
 
 ## Opt-in flow
 
@@ -80,6 +81,7 @@ java -jar $JAR disable   $AEM                                     # restores the
 | `launchpad/config/…/composite/MountInfoProviderService.config` | Read-only mount at the mount path |
 | `launchpad/config/…/composite/CompositeNodeStoreService.config` | `enabled=false` (read by Package Manager), `enableChecks=false`. Package Manager's placeholder is backed up. |
 | `launchpad/config/com/oakchain/connector/mount/OakChainMountProvider.config` | Validator URL and refresh interval; the optional token goes in a private property in a 0600 file |
+| `launchpad/config/com/adobe/granite/maintenance/crx/impl/RevisionCleanupTask%007emain.config` | AEM's Revision Clean Up task, edited in place: `role=composite-global`. Without it the task finds no revision GC and daily maintenance never compacts the repository (see Garbage collection). Only the shipped `~main` instance is edited; none is created. |
 | `install/15/oak-chain-connector.mount.jar` | This bundle |
 
 Configs go straight into Felix's persisted store so the first boot cannot race the installer.
@@ -87,13 +89,14 @@ Every managed file carries an `oakchain.optin` marker and its SHA-256 is recorde
 `crx-quickstart/oak-chain-opt-in/state.properties`. Replaced files are copied to
 `oak-chain-opt-in/backup/`.
 
-- `enable` is idempotent: re-running it with new parameters updates in place and keeps the original backups.
+- `enable` is idempotent: re-running it with new parameters, or with a newer tool that manages more files, updates in place and keeps the original backups. State is keyed by file path.
 - `disable` refuses if a managed file was edited since enable (override with `--force`).
 - `verify` checks, for the current boot only:
   - AEM up and all bundles active;
   - the mount bundle active and the mount path served;
   - exactly one composite registration, i.e. no repository restart;
-  - the mount connected and no resolution errors.
+  - the mount connected and no resolution errors;
+  - Revision Clean Up's effective `role` is `composite-global` (a code-base config of `RevisionCleanupTask` would override the launchpad one).
   - With `--write-probe` it also checks that a write under the mount is rejected while a global write and delete succeed.
 
 Tokens and credentials never go on the command line: `--token-env VAR` and `--auth-env VAR`
@@ -102,7 +105,9 @@ name environment variables instead.
 `lab/cycle.sh <vanilla-aem-home> <work-dir> <validator-url> [rounds] [port]` runs the whole
 lifecycle repeatedly on a fresh copy:
 preflight → enable → start → verify → stop → status → disable → start → verify (opted out) → stop.
-`lab/relay.py` is a disposable TCP relay for outage tests.
+`lab/relay.py` is a disposable TCP relay for outage tests; with a log file it records every request line, e.g. which segments AEM fetched.
+`lab/validator-gc.mjs` runs validator GC under a live opted-in AEM and judges it (see Garbage collection).
+`lab/JmxProbe.java` attaches to a local AEM JVM over the JDK Attach API to read or invoke Oak's GC MBeans.
 
 ## AEM 6.5 LTS API controller
 
@@ -126,9 +131,30 @@ Lab copy of a virgin instance, live 3-validator cluster, validator-0 on `:8090`:
 | Validator comes up | `/oak-chain` appears within one refresh; still one composite registration, one repository start |
 | Validator outage after connect | Cached nodes stay readable; binaries and uncached segments fail; global reads and writes unaffected; recovers without a restart |
 | Updating this bundle | Repository bounces once by design (provider unbind); AEM recovers; logs typical repository-restart noise |
+| Validator GC under the mount (`lab/validator-gc.mjs`, isolated 3-validator cluster on trunk `d6962279` with the GC test profile, AEM mounting validator-0 through the logging relay) | 16/16 assertions pass. 22 writes (2.9 MB of messages, 4 binaries) read through AEM, 19 deleted and gone from AEM within 4 s; validator-0 ran 2 full and 2 tail compactions, reclaimed 3.16 MB and shrank from 3.1 MB to 0.19 MB; binary GC released the 3 deleted binaries; all 18 pre-GC segments left the TAR files, AEM had fetched each of them, and each answers 404. Throughout, 639 control reads through AEM (message content and binary bytes) were all correct (max 23 ms); a write after GC appeared in AEM; 0 SegmentNotFound, 0 commit failures, 0 async-index warnings, 0 ERROR lines. |
+| AEM Revision Clean Up after opt-in | Before the fix, the role-less status reads "no service of type RevisionGCMBean found". With `role=composite-global` the real task ran from Operations: estimation measured the in-place `repository/segmentstore` and skipped (+1%, below 1 GB, as AEM does). Forced once (estimation off over JMX), it ran a full compaction and cleanup of that store with the mount attached; the task SUCCEEDED, `gc.log` gained its entry, and verify stayed clean. |
+| Upgrading the tool on an opted-in instance | Re-running `enable` with the version that also manages `RevisionCleanupTask~main` backed up the shipped original first; `status` showed no drift. |
 | Opt-in lifecycle, 2 rounds (`lab/cycle.sh` on a fresh copy of a virgin instance) | 16/16 steps pass. Opted in: 591/591 bundles active, one composite registration, mount connected, 0 ERROR lines, mount write rejected, global write OK. Opted out: 590/590 active, bundle uninstalled, `/oak-chain` 404, primary TarMK back on `repository/segmentstore`, 0 ERROR lines. enable ≈1 s, start+verify ≈11 s |
 
 Unit tests (`mvn test`) reproduce the Oak layer in-process: Apache Oak 2.4.0 `FileStore` served over the validator HTTP contract and mounted in a stock `CompositeNodeStore`.
+
+## Garbage collection
+
+**On the validators.** Segment GC and binary GC run in every validator by default. The mount follows the
+validator's journal, so it moves to the compacted head on its next refresh. A reader pinned to an older
+revision (a JCR session that never refreshes, a backed-up observation queue) is safe for one full GC
+cycle, because validators retain two generations. After that its uncached segments can be gone: the
+validator answers 404 for a segment it no longer holds, even while one is still in its cache. When that
+happens is not fixed: Oak rewrites a TAR file only when that saves at least 25% (`TarReader.sweep`), so
+deleted content can survive many cycles. A binary that binary GC released answers 404 on `/api/blob`.
+`LazyRemoteNodeStoreTest.validatorRevisionGcUnderTheMount` pins this down on Oak 2.4.0.
+
+**In AEM.** AEM's Revision Clean Up task asks Oak's `RepositoryManager` for the revision GC with no role,
+and Oak turns that into the OSGi filter `(!(role=*))`. After opt-in the only revision GC is the global
+store's (`role=composite-global`), so the role-less lookup answers "no service of type RevisionGCMBean
+found" and daily maintenance would never compact the repository. `enable` therefore sets the task's own
+`role` property, and `verify` checks the effective value. Data Store GC needs nothing: its lookup has no
+role filter and finds the global store's blob GC.
 
 ## Repository restart triggers (static-greedy references in AEM 6.5 LTS)
 
@@ -142,9 +168,8 @@ Unit tests (`mvn test`) reproduce the Oak layer in-process: Apache Oak 2.4.0 `Fi
 
 ## Known limits
 
-- No JCR observation events for mount changes. The validator's `/v1/events/stream` is the natural source.
+- Chain changes reach JCR observation late and in batches: the composite dispatches only on AEM's own commits, so a chain change appears in the diff of the next one. Listeners and workflow launchers that match `/oak-chain` will see it. For timely chain events use the validator's event stream.
 - No query indexing of mount content.
-- A binary the validator's binary GC has released answers 404 on `/api/blob`, so reading it through AEM fails.
-- Validators run segment GC by default. The mount moves to the compacted head on its next refresh; a compaction while AEM is mounted has not been run yet.
+- Readers that hold one revision across two validator GC cycles can lose uncached segments (see Garbage collection).
 - A reader is pinned to one validator (logical, not physical, convergence).
 - Unsupported topology for AEM 6.5 LTS on TarMK.

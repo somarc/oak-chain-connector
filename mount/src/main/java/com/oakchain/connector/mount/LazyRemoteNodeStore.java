@@ -45,6 +45,8 @@ import org.slf4j.LoggerFactory;
  *       which Oak caches.</li>
  *   <li>{@link #getRoot()} never throws: the composite calls it on every root read, for the
  *       whole repository.</li>
+ *   <li>Nodes the validator wrote without {@code jcr:primaryType} read as
+ *       {@code nt:unstructured} ({@link TypedNodeState}).</li>
  *   <li>Checkpoints: the composite only checkpoints the global store and reads read-only
  *       mounts at their current root, so this store exposes none.</li>
  * </ul>
@@ -208,7 +210,7 @@ final class LazyRemoteNodeStore implements NodeStore, Closeable {
             return EmptyNodeState.EMPTY_NODE;
         }
         try {
-            NodeState root = r.nodeStore.getRoot();
+            NodeState root = TypedNodeState.wrap(r.nodeStore.getRoot());
             lastRoot = root;
             return root;
         } catch (RuntimeException e) {

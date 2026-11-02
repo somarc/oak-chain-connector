@@ -42,6 +42,11 @@ public class OptInPlanTest {
         write(q.resolve("launchpad/config/org/apache/jackrabbit/oak/composite/CompositeNodeStoreService.config"),
                 ":org.apache.felix.configadmin.revision:=L\"1\"\n_felix_.cm.newConfiguration=B\"true\"\n"
                         + "service.pid=\"org.apache.jackrabbit.oak.composite.CompositeNodeStoreService\"\n");
+        // As AEM 6.5 LTS ships it (launchpad resource crx3/...RevisionCleanupTask-main.config).
+        write(q.resolve("launchpad/config/com/adobe/granite/maintenance/crx/impl/RevisionCleanupTask%007emain.config"),
+                ":org.apache.felix.configadmin.revision:=L\"1\"\njob.topics=\"com/adobe/granite/maintenance/job/RevisionCleanupTask\"\n"
+                        + "service.factoryPid=\"com.adobe.granite.maintenance.crx.impl.RevisionCleanupTask\"\n"
+                        + "service.pid=\"com.adobe.granite.maintenance.crx.impl.RevisionCleanupTask~main\"\n");
         write(q.resolve("repository/segmentstore/data00000a.tar"), "tar");
         write(q.resolve("repository/segmentstore/journal.log"), "journal");
         Files.createDirectories(q.resolve("install"));
@@ -80,8 +85,50 @@ public class OptInPlanTest {
         assertTrue(Files.readString(home.resolve("crx-quickstart/install/org.apache.jackrabbit.oak.segment.SegmentNodeStoreService.config"))
                 .contains("customSegmentStore=B\"true\""));
 
+        String cleanup = Files.readString(home.resolve(
+                "crx-quickstart/launchpad/config/com/adobe/granite/maintenance/crx/impl/RevisionCleanupTask%007emain.config"));
+        assertTrue("Revision Clean Up targets the global store", cleanup.contains("role=\"composite-global\""));
+        assertTrue("edited in place", cleanup.contains("service.factoryPid=\"com.adobe.granite.maintenance.crx.impl.RevisionCleanupTask\""));
+        assertTrue(cleanup.contains("job.topics=\"com/adobe/granite/maintenance/job/RevisionCleanupTask\""));
+
         assertEquals("repository/ is never modified", repoBefore, snapshot(home.resolve("crx-quickstart/repository")));
         assertTrue(plan.drift().isEmpty());
+    }
+
+    /**
+     * Re-running enable when the managed file set changed (a newer tool, or a config that
+     * appeared since) must still back up every original and restore all of them on disable.
+     */
+    @Test
+    public void reEnableWithAChangedFileSetKeepsEveryOriginal() throws IOException {
+        Map<String, String> before = snapshot(home);
+        Path main = home.resolve("crx-quickstart/launchpad/config/com/adobe/granite/maintenance/crx/impl/RevisionCleanupTask%007emain.config");
+        String original = Files.readString(main);
+        Files.delete(main);
+        plan.enable(params, jar); // manages one file fewer
+        write(main, original);
+        plan.enable(params, jar); // now also manages ~main, inserted mid-list
+        assertTrue(Files.readString(main).contains("role=\"composite-global\""));
+        plan.disable();
+        assertEquals("every original restored byte for byte, nothing of ours left", before, snapshot(home));
+    }
+
+    @Test
+    public void noRevisionCleanupConfigIsCreatedWhenAemHasNone() throws IOException {
+        Path main = home.resolve("crx-quickstart/launchpad/config/com/adobe/granite/maintenance/crx/impl/RevisionCleanupTask%007emain.config");
+        Files.delete(main);
+        plan.enable(params, jar);
+        assertFalse("a new instance could start a second task", Files.exists(main));
+        plan.disable();
+        assertFalse(Files.exists(main));
+    }
+
+    @Test
+    public void readsAPropertyFromTheConfigurationStatus() {
+        String status = "PID = a.B~main\n  Factory PID = a.B\n  role = composite-global\n\nPID = a.C\n  role = other\n";
+        assertEquals("composite-global", Verify.configValue(status, "a.B~main", "role"));
+        assertEquals(null, Verify.configValue(status, "a.B~main", "missing"));
+        assertEquals(null, Verify.configValue(status, "a.D", "role"));
     }
 
     @Test
