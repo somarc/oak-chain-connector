@@ -7,6 +7,10 @@ AEM's repository at `/oak-chain` through Oak's own `CompositeNodeStore`.
 (sha256 of `oak-segment-tar`, `oak-store-composite`, `oak-store-spi` and `oak-core` match
 the Apache release), and this bundle builds against those exact artifacts.
 
+This is Oak Chain's supported path for AEM 6.5 LTS. Operators start from
+[AEM 6.5 LTS Integration](https://oakchain.net/guide/aem-integration); this README is the
+developer reference behind it.
+
 ## How it fits together
 
 ```
@@ -140,6 +144,7 @@ Unit tests (`mvn test`) reproduce the Oak layer in-process: Apache Oak 2.4.0 `Fi
 
 - No JCR observation events for mount changes. The validator's `/v1/events/stream` is the natural source.
 - No query indexing of mount content.
-- External (IPFS) binaries under the mount throw when streamed. Inlined binaries work.
+- A binary the validator's binary GC has released answers 404 on `/api/blob`, so reading it through AEM fails.
+- Validators run segment GC by default. The mount moves to the compacted head on its next refresh; a compaction while AEM is mounted has not been run yet.
 - A reader is pinned to one validator (logical, not physical, convergence).
 - Unsupported topology for AEM 6.5 LTS on TarMK.
