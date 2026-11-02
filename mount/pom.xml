@@ -185,6 +185,8 @@
                             <bnd><![CDATA[
 Bundle-SymbolicName: com.oakchain.connector.mount
 Bundle-Description: Read-only, lazily connected Oak Chain composite mount (NodeStoreProvider) for AEM 6.5 LTS / Oak 2.4.0
+# The same jar is the opt-in CLI: java -jar <jar> preflight|enable|verify|status|disable <aem-home>
+Main-Class: com.oakchain.connector.mount.optin.OptInTool
 # Nothing is exported. Our own code stays private.
 -exportcontents:
 Private-Package: com.oakchain.connector.mount.*
